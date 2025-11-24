@@ -1,0 +1,7 @@
+{
+  "name": "IPTVPlayer",
+  "description": "A next-generation IPTV player featuring AI-powered channel insights and voice transcription.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
