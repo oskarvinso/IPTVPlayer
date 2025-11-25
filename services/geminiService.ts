@@ -1,49 +1,39 @@
 import { GoogleGenAI } from "@google/genai";
 
-const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found");
-  }
-  return new GoogleGenAI({ apiKey });
+const getClient = () => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return null;
+    return new GoogleGenAI({ apiKey });
 };
 
-export const getChannelInsights = async (channelName: string): Promise<string> => {
-  try {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Provide a short, 2-sentence description of the TV channel or show type likely associated with the name: "${channelName}". Focus on genre and typical content.`,
-    });
-    return response.text || "No insights available.";
-  } catch (error) {
-    console.error("Gemini Insight Error:", error);
-    return "Unable to fetch channel insights at this time.";
-  }
+export const getChannelInsight = async (channelName: string, groupName: string) => {
+    const ai = getClient();
+    if (!ai) return "API Key not configured.";
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Provide a short, 2-sentence description of the TV channel named "${channelName}" which is in the "${groupName}" category. If it is a specific known channel, describe its typical content. If it is generic, describe what such a channel typically shows. Do not hallucinate a fake history, just describe the genre.`,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Gemini Error:", error);
+        return "Unable to fetch channel insights at the moment.";
+    }
 };
 
-export const transcribeAudio = async (audioBase64: string, mimeType: string): Promise<string> => {
-  try {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: audioBase64
-            }
-          },
-          {
-            text: "Transcribe this audio exactly as spoken."
-          }
-        ]
-      }
-    });
-    return response.text || "";
-  } catch (error) {
-    console.error("Transcription Error:", error);
-    throw new Error("Failed to transcribe audio.");
-  }
-};
+export const checkContentSafety = async (channelName: string): Promise<boolean> => {
+   const ai = getClient();
+   if (!ai) return true; // Default to safe if no AI
+
+   try {
+       const response = await ai.models.generateContent({
+           model: 'gemini-2.5-flash',
+           contents: `Is the TV channel name "${channelName}" likely to contain adult or restricted content? Answer strictly with "YES" or "NO".`,
+       });
+       const text = response.text.trim().toUpperCase();
+       return text.includes("NO");
+   } catch (e) {
+       return true;
+   }
+}
