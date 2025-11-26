@@ -1,9 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Channel, AppView, UserSettings, StoredPlaylist } from './types';
+import { Channel, AppView, UserSettings, StoredPlaylist, StoredEPG, EPGProgram } from './types';
 import { parseM3U, fetchM3U, SAMPLE_PLAYLIST } from './services/m3uParser';
+import { fetchEPG, parseXMLTV } from './services/epgParser';
 import VideoPlayer from './components/VideoPlayer';
 import { GlassCard, GlassButton, GlassInput } from './components/GlassUI';
 import { getChannelInsight } from './services/geminiService';
+
+export const IPTVLIST = 'https://iptv-org.github.io/iptv/index.m3u';
 
 // Icons
 const Icons = {
@@ -14,26 +17,33 @@ const Icons = {
   Brain: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M208,72a64,64,0,1,0-123.1,26.64A88,88,0,1,0,48,168a8,8,0,0,0,16,0,72,72,0,1,1,96.38-46.66,8,8,0,0,0,14.65,6.32A88,88,0,1,0,208,72Z"></path></svg>,
   Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"></path></svg>,
   Trash: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path></svg>,
-  Globe: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM101.63,168h52.74C149,186.34,140,202.87,128,215.89,116,202.87,107,186.34,101.63,168ZM98,152a145.72,145.72,0,0,1,0-48h60a145.72,145.72,0,0,1,0,48Zm-5.69-48H40.11a88,88,0,0,1,17.15-26.68A104.57,104.57,0,0,0,92.31,104Zm0,48a104.57,104.57,0,0,0-35.05,26.68A88,88,0,0,1,40.11,152Zm5.63,26.68A146.51,146.51,0,0,1,128,247.6a146.51,146.51,0,0,1,29.94-20.92,88.42,88.42,0,0,1-59.88,0ZM154.37,88c5.38,18.34,14.37,34.87,19.63,48H121.26c-5.26-13.13-14.25-29.66-19.63-48Zm8.32-10.32A146.51,146.51,0,0,1,128,56.4,146.51,146.51,0,0,1,93.31,77.68,88.42,88.42,0,0,1,153.15,77.68ZM163.69,104a104.57,104.57,0,0,0,35.05-26.68A88,88,0,0,1,215.89,104Zm0,48h52.2a88,88,0,0,1-17.15,26.68A104.57,104.57,0,0,0,163.69,152Z"></path></svg>
+  Globe: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM101.63,168h52.74C149,186.34,140,202.87,128,215.89,116,202.87,107,186.34,101.63,168ZM98,152a145.72,145.72,0,0,1,0-48h60a145.72,145.72,0,0,1,0,48Zm-5.69-48H40.11a88,88,0,0,1,17.15-26.68A104.57,104.57,0,0,0,92.31,104Zm0,48a104.57,104.57,0,0,0-35.05,26.68A88,88,0,0,1,40.11,152Zm5.63,26.68A146.51,146.51,0,0,1,128,247.6a146.51,146.51,0,0,1,29.94-20.92,88.42,88.42,0,0,1-59.88,0ZM154.37,88c5.38,18.34,14.37,34.87,19.63,48H121.26c-5.26-13.13-14.25-29.66-19.63-48Zm8.32-10.32A146.51,146.51,0,0,1,128,56.4,146.51,146.51,0,0,1,93.31,77.68,88.42,88.42,0,0,1,153.15,77.68ZM163.69,104a104.57,104.57,0,0,0,35.05-26.68A88,88,0,0,1,215.89,104Zm0,48h52.2a88,88,0,0,1-17.15,26.68A104.57,104.57,0,0,0,163.69,152Z"></path></svg>,
+  EPG: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM176,88a8,8,0,0,1-8,8H88a8,8,0,0,1,0-16h80A8,8,0,0,1,176,88Zm0,40a8,8,0,0,1-8,8H88a8,8,0,0,1,0-16h80A8,8,0,0,1,176,128Zm0,40a8,8,0,0,1-8,8H88a8,8,0,0,1,0-16h80A8,8,0,0,1,176,168Z"></path></svg>
 };
 
 const DEFAULT_SETTINGS: UserSettings = {
   parentalPin: '1234', // Default PIN
-  lockedGroups: ['Adult', 'XXX', 'Gore']
+  lockedGroups: ['Adult', 'XXX', 'Gore', 'Adults', 'Porn']
 };
 
-const STORAGE_KEY_PLAYLISTS = 'glassstream_playlists_v1';
+const STORAGE_KEY_PLAYLISTS = 'glassstream_playlists_v2';
 const STORAGE_KEY_SETTINGS = 'glassstream_settings_v1';
+const STORAGE_KEY_EPG_SOURCES = 'glassstream_epg_sources_v1';
 
 export default function App() {
   const [playlists, setPlaylists] = useState<StoredPlaylist[]>([]);
+  const [epgSources, setEpgSources] = useState<StoredEPG[]>([]);
+  const [epgData, setEpgData] = useState<Record<string, EPGProgram[]>>({});
+  
   const [channels, setChannels] = useState<Channel[]>([]);
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [view, setView] = useState<AppView>(AppView.PLAYER);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState<string>('All');
+  const [selectedGroup, setSelectedGroup] = useState<string>('Todos'); // Spanish Default
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [appLoading, setAppLoading] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   
   // Gemini Insight State
   const [insight, setInsight] = useState<string | null>(null);
@@ -52,73 +62,165 @@ export default function App() {
 
   // Load Persistence
   useEffect(() => {
-    try {
-      const storedPl = localStorage.getItem(STORAGE_KEY_PLAYLISTS);
-      const storedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    const initializeApp = async () => {
+      setAppLoading(true);
+      setInitError(null);
+      try {
+        const storedPl = localStorage.getItem(STORAGE_KEY_PLAYLISTS);
+        const storedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
+        const storedEpgs = localStorage.getItem(STORAGE_KEY_EPG_SOURCES);
 
-      if (storedSettings) {
-        setSettings(JSON.parse(storedSettings));
-      }
+        if (storedSettings) setSettings(JSON.parse(storedSettings));
+        if (storedEpgs) setEpgSources(JSON.parse(storedEpgs));
 
-      if (storedPl) {
-        setPlaylists(JSON.parse(storedPl));
-      } else {
-        // Init with sample
-        const sample: StoredPlaylist = {
-          id: 'sample',
-          name: 'Demo Playlist',
-          type: 'text',
-          content: SAMPLE_PLAYLIST,
-          isActive: true
-        };
-        setPlaylists([sample]);
+        let initialPlaylists: StoredPlaylist[] = [];
+
+        if (storedPl) {
+          initialPlaylists = JSON.parse(storedPl);
+          
+          // Refetch URL-based playlists that have empty content
+          const refetchedPlaylists = await Promise.all(initialPlaylists.map(async (pl) => {
+            if (pl.type === 'url' && (!pl.content || pl.content.length === 0) && pl.url) {
+              try {
+                const content = await fetchM3U(pl.url);
+                return { ...pl, content };
+              } catch (e) {
+                console.warn(`Failed to reload playlist ${pl.name}`, e);
+                return pl; 
+              }
+            }
+            return pl;
+          }));
+          initialPlaylists = refetchedPlaylists;
+          setPlaylists(initialPlaylists);
+        } else {
+          try {
+             const content = await fetchM3U(IPTVLIST);
+             const defaultPlaylist: StoredPlaylist = {
+               id: 'iptv-org-default',
+               name: 'IPTV Public (Default)',
+               type: 'url',
+               content: content,
+               url: IPTVLIST,
+               isActive: true
+             };
+             initialPlaylists = [defaultPlaylist];
+             setPlaylists(initialPlaylists);
+          } catch (err) {
+             console.error("Default playlist fetch failed", err);
+             // Fallback to sample if the big list fails
+             const sample: StoredPlaylist = {
+               id: 'sample',
+               name: 'Demo Playlist (Fallback)',
+               type: 'text',
+               content: SAMPLE_PLAYLIST,
+               isActive: true
+             };
+             setPlaylists([sample]);
+             setInitError("No se pudo cargar la lista completa. Se cargó una lista demo.");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load storage", e);
+        setInitError("Error crítico al cargar datos.");
+      } finally {
+        setAppLoading(false);
       }
-    } catch (e) {
-      console.error("Failed to load storage", e);
-    }
+    };
+
+    initializeApp();
   }, []);
 
   // Save Persistence
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PLAYLISTS, JSON.stringify(playlists));
-  }, [playlists]);
+    if (appLoading) return;
+
+    try {
+      // Optimize storage
+      const playlistsToSave = playlists.map(pl => {
+        if (pl.type === 'url' && pl.url && pl.content.length > 500000) { 
+           return { ...pl, content: '' }; 
+        }
+        return pl;
+      });
+      localStorage.setItem(STORAGE_KEY_PLAYLISTS, JSON.stringify(playlistsToSave));
+    } catch (e) {
+       // Ignore quota errors silently
+    }
+  }, [playlists, appLoading]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
   }, [settings]);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_EPG_SOURCES, JSON.stringify(epgSources));
+  }, [epgSources]);
+
   // Aggregate Channels
   useEffect(() => {
-    let allChannels: Channel[] = [];
-    playlists.forEach(pl => {
-      if (pl.isActive) {
-        const parsed = parseM3U(pl.content, pl.id);
-        allChannels = [...allChannels, ...parsed];
+    if (appLoading) return;
+    
+    // Defer processing to avoid blocking main thread immediately
+    const timeoutId = setTimeout(() => {
+        let allChannels: Channel[] = [];
+        playlists.forEach(pl => {
+          if (pl.isActive && pl.content) {
+            const parsed = parseM3U(pl.content, pl.id);
+            allChannels = [...allChannels, ...parsed];
+          }
+        });
+        setChannels(allChannels);
+        
+        if (currentChannel && !allChannels.find(c => c.id === currentChannel.id)) {
+          setCurrentChannel(null);
+        }
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
+  }, [playlists, appLoading]);
+
+  // Load EPG Data
+  useEffect(() => {
+      const loadEpghData = async () => {
+          let aggregatedEpg: Record<string, EPGProgram[]> = {};
+          
+          for (const source of epgSources) {
+              if (source.isActive) {
+                  try {
+                      // console.log("Fetching EPG:", source.name);
+                      const xml = await fetchEPG(source.url);
+                      const parsed = parseXMLTV(xml);
+                      aggregatedEpg = { ...aggregatedEpg, ...parsed };
+                  } catch (e) {
+                      console.error("Error loading EPG source", source.name, e);
+                  }
+              }
+          }
+          setEpgData(aggregatedEpg);
+      };
+      
+      if (epgSources.length > 0) {
+          loadEpghData();
       }
-    });
-    setChannels(allChannels);
-    // If current channel is no longer available (e.g. playlist disabled), reset it
-    if (currentChannel && !allChannels.find(c => c.id === currentChannel.id)) {
-      setCurrentChannel(null);
-    }
-    // Auto select first channel if nothing selected and channels exist
-    if (!currentChannel && allChannels.length > 0) {
-      setCurrentChannel(allChannels[0]);
-    }
-  }, [playlists]);
+  }, [epgSources]);
 
   // Filtering
   const groups = useMemo(() => {
-    const all = new Set(channels.map(c => c.group || 'Uncategorized'));
-    return ['All', ...Array.from(all).sort()];
+    const all = new Set(channels.map(c => c.group || 'Sin categoría'));
+    return ['Todos', ...Array.from(all).sort()];
   }, [channels]);
 
   const filteredChannels = useMemo(() => {
-    return channels.filter(c => {
-      const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesGroup = selectedGroup === 'All' || c.group === selectedGroup;
-      return matchesSearch && matchesGroup;
-    });
+    let result = channels;
+    if (selectedGroup !== 'Todos') {
+        result = result.filter(c => c.group === selectedGroup);
+    }
+    if (searchTerm) {
+        const lowerSearch = searchTerm.toLowerCase();
+        result = result.filter(c => c.name.toLowerCase().includes(lowerSearch));
+    }
+    return result.slice(0, 500); 
   }, [channels, searchTerm, selectedGroup]);
 
   // Handlers
@@ -129,7 +231,7 @@ export default function App() {
       setPinInput('');
     } else {
       setCurrentChannel(channel);
-      setInsight(null); // Reset insight
+      setInsight(null);
       if (window.innerWidth < 768) setSidebarOpen(false);
     }
   };
@@ -141,7 +243,7 @@ export default function App() {
       setPendingChannel(null);
       setInsight(null);
     } else {
-      alert('Incorrect PIN');
+      alert('PIN Incorrecto');
     }
   };
 
@@ -151,22 +253,41 @@ export default function App() {
     
     try {
       let contentToSave = playlistContent;
+      let urlToSave = undefined;
       
       if (playlistSource === 'url') {
+        urlToSave = playlistContent;
         contentToSave = await fetchM3U(playlistContent);
       }
 
-      // Validate parse
+      // Check for EPG tag in content #EXTM3U url-tvg="http..."
+      const epgMatch = contentToSave.match(/url-tvg="([^"]*)"/i) || contentToSave.match(/x-tvg-url="([^"]*)"/i);
+      if (epgMatch && epgMatch[1]) {
+          const epgUrl = epgMatch[1];
+          // Check if already exists
+          if (!epgSources.find(e => e.url === epgUrl)) {
+              if (confirm(`Se detectó una guía EPG en la lista. ¿Deseas añadirla?\nURL: ${epgUrl}`)) {
+                  setEpgSources(prev => [...prev, {
+                      id: Math.random().toString(36).substring(2),
+                      name: `${playlistName} EPG`,
+                      url: epgUrl,
+                      isActive: true
+                  }]);
+              }
+          }
+      }
+
       const testParse = parseM3U(contentToSave);
       if (testParse.length === 0) {
-        throw new Error("No channels found in playlist.");
+        throw new Error("No se encontraron canales en la lista.");
       }
 
       const newPlaylist: StoredPlaylist = {
         id: Math.random().toString(36).substring(2, 9),
         name: playlistName,
         type: playlistSource,
-        content: contentToSave, // For URL we save the fetched content to keep it offline/fast, or we could save URL and refetch. Here we save content for simplicity and speed.
+        content: contentToSave, 
+        url: urlToSave,
         isActive: true
       };
 
@@ -175,14 +296,14 @@ export default function App() {
       setPlaylistName('');
       setPlaylistContent('');
     } catch (e: any) {
-      alert(`Failed to import: ${e.message}`);
+      alert(`Error al importar: ${e.message}`);
     } finally {
       setIsImporting(false);
     }
   };
 
   const deletePlaylist = (id: string) => {
-    if (confirm("Are you sure you want to delete this playlist?")) {
+    if (confirm("¿Estás seguro de eliminar esta lista?")) {
       setPlaylists(prev => prev.filter(p => p.id !== id));
     }
   };
@@ -190,14 +311,51 @@ export default function App() {
   const togglePlaylist = (id: string) => {
     setPlaylists(prev => prev.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p));
   };
+  
+  const addEpgSource = () => {
+      const url = prompt("Introduce la URL del archivo XMLTV (ej. https://iptv-org.github.io/epg/guides/es/mi.tv.epg.xml):");
+      if (url) {
+          const name = prompt("Nombre para esta guía:", "EPG Personalizado");
+          if (name) {
+              setEpgSources(prev => [...prev, {
+                  id: Math.random().toString(36).substring(2),
+                  name,
+                  url,
+                  isActive: true
+              }]);
+          }
+      }
+  };
+
+  const deleteEpg = (id: string) => setEpgSources(prev => prev.filter(e => e.id !== id));
 
   const fetchInsight = async () => {
     if (!currentChannel) return;
     setLoadingInsight(true);
     const text = await getChannelInsight(currentChannel.name, currentChannel.group);
-    setInsight(text || "No insight available.");
+    setInsight(text || "No hay información disponible.");
     setLoadingInsight(false);
   };
+
+  // EPG Helper
+  const getCurrentProgram = (channelId: string) => {
+      if (!channelId || !epgData[channelId]) return null;
+      const now = new Date();
+      return epgData[channelId].find(p => p.start <= now && p.end > now);
+  };
+
+  if (appLoading) {
+      return (
+          <div className="flex h-screen w-full items-center justify-center bg-[#0f172a] text-white flex-col gap-4">
+               <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+               <div className="flex items-center gap-2">
+                 <img src="https://ameliasoft.net/assets/img/abstract/LogoAmeliasoftSinFondo1.png" alt="Loading" className="h-8 w-auto opacity-80" />
+                 <p className="font-medium animate-pulse">Iniciando AmeliaSoft IPTV...</p>
+               </div>
+               <p className="text-xs text-gray-500">Cargando canales (esto puede tardar si la lista es grande)...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden text-white font-sans selection:bg-blue-500/30">
@@ -205,17 +363,22 @@ export default function App() {
       {/* Sidebar - Channel List */}
       <div className={`${isSidebarOpen ? 'w-full md:w-80' : 'w-0'} bg-glass-900/80 backdrop-blur-2xl border-r border-white/5 transition-all duration-300 flex flex-col z-20 absolute md:relative h-full shrink-0 shadow-2xl`}>
         <div className="p-4 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-blue-900/20 to-transparent">
-          <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-            GlassStream
-          </h1>
+          <div className="flex items-center gap-2">
+            <img src="https://ameliasoft.net/assets/img/abstract/LogoAmeliasoftSinFondo1.png" alt="Logo" className="h-10 w-auto object-contain" />
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden p-2 text-white/70 hover:text-white">
             ✕
           </button>
         </div>
 
         <div className="p-4 space-y-3">
+          {initError && (
+             <div className="bg-orange-500/10 border border-orange-500/30 p-2 rounded text-xs text-orange-200 mb-2">
+               {initError}
+             </div>
+          )}
           <GlassInput 
-            placeholder="Search channels..." 
+            placeholder="Buscar canales..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="bg-black/30 border-white/5 focus:border-blue-500/50"
@@ -235,7 +398,7 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto no-scrollbar p-2 space-y-1">
           {filteredChannels.length === 0 ? (
-             <div className="text-center text-gray-500 py-10 text-sm">No channels found</div>
+             <div className="text-center text-gray-500 py-10 text-sm">No se encontraron canales</div>
           ) : (
             filteredChannels.map(channel => (
               <button
@@ -254,6 +417,10 @@ export default function App() {
                   <p className={`font-medium truncate text-sm ${currentChannel?.id === channel.id ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>{channel.name}</p>
                   <div className="flex items-center gap-2">
                      <p className="text-[10px] text-gray-500 truncate uppercase tracking-wider">{channel.group}</p>
+                     {/* EPG Indicator */}
+                     {channel.tvgId && epgData[channel.tvgId] && (
+                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full" title="Guía disponible"></span>
+                     )}
                   </div>
                 </div>
                 {settings.lockedGroups.includes(channel.group) && <Icons.Lock />}
@@ -263,7 +430,7 @@ export default function App() {
         </div>
         <div className="p-3 bg-gradient-to-t from-black/80 to-transparent">
              <GlassButton variant="ghost" className="w-full text-sm bg-white/5 hover:bg-white/10" onClick={() => setShowAddPlaylist(true)}>
-              <Icons.Plus /> Add Playlist
+              <Icons.Plus /> Añadir Lista
             </GlassButton>
         </div>
       </div>
@@ -286,13 +453,13 @@ export default function App() {
                 onClick={() => setView(AppView.PLAYER)} 
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${view === AppView.PLAYER ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
             >
-                Player
+                Reproductor
             </button>
             <button 
                 onClick={() => setView(AppView.EPG)} 
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${view === AppView.EPG ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
             >
-                Guide
+                Guía
             </button>
             <button 
                 onClick={() => setView(AppView.SETTINGS)} 
@@ -313,7 +480,7 @@ export default function App() {
                   <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center animate-pulse">
                       <Icons.Play />
                   </div>
-                  <p>Select a channel to start watching</p>
+                  <p>Selecciona un canal para comenzar</p>
               </div>
             )}
             
@@ -326,18 +493,18 @@ export default function App() {
                         className="bg-black/50 hover:bg-purple-600/90 text-white p-3 rounded-full shadow-lg border border-white/10 hover:border-purple-500/50 backdrop-blur-md transition-all flex items-center gap-2 group"
                     >
                         <Icons.Brain />
-                        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap text-sm font-medium">Channel Insight</span>
+                        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap text-sm font-medium">Info del Canal (IA)</span>
                     </button>
                 ) : (
                     <GlassCard className="p-4 animate-in slide-in-from-bottom-4 duration-300 border-purple-500/30 bg-black/80">
                         <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2"><Icons.Brain /> AI Insight</h3>
+                            <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2"><Icons.Brain /> Análisis IA</h3>
                             <button onClick={() => setInsight(null)} className="text-xs text-gray-400 hover:text-white bg-white/10 rounded-full w-5 h-5 flex items-center justify-center">✕</button>
                         </div>
                         {loadingInsight ? (
                             <div className="text-sm text-gray-400 animate-pulse flex items-center gap-2">
                                 <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce"></span>
-                                Analyzing channel content...
+                                Analizando contenido...
                             </div>
                         ) : (
                             <p className="text-sm leading-relaxed text-gray-200">{insight}</p>
@@ -351,24 +518,26 @@ export default function App() {
         {view === AppView.EPG && (
             <div className="flex-1 bg-glass-900/90 backdrop-blur-3xl overflow-auto p-4 md:p-8 pt-20">
                 <div className="flex items-center justify-between mb-8">
-                     <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-500">Program Guide</h2>
+                     <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-500">Guía de Programación</h2>
                      <div className="text-sm text-gray-400">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                 </div>
                 
                 <div className="grid gap-1">
                     {/* Header Row */}
                     <div className="grid grid-cols-12 gap-4 mb-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        <div className="col-span-3">Channel</div>
+                        <div className="col-span-3">Canal</div>
                         <div className="col-span-9 flex justify-between">
-                            <span>Now</span>
-                            <span>+30m</span>
-                            <span>+1h</span>
-                            <span>+1.5h</span>
+                            <span>Ahora</span>
+                            <span>Siguiente</span>
                         </div>
                     </div>
 
                     {/* Channel Rows */}
-                    {filteredChannels.slice(0, 20).map(ch => (
+                    {filteredChannels.slice(0, 30).map(ch => {
+                        const prog = ch.tvgId ? getCurrentProgram(ch.tvgId) : null;
+                        const nextProg = ch.tvgId && epgData[ch.tvgId] ? epgData[ch.tvgId].find(p => p.start > new Date()) : null;
+
+                        return (
                         <div key={ch.id} className="grid grid-cols-12 gap-4 items-center bg-white/5 hover:bg-white/10 p-3 rounded-xl border border-white/5 transition-colors group">
                             <div className="col-span-3 flex items-center gap-3 overflow-hidden">
                                 <div className="w-10 h-10 bg-black/40 rounded-lg flex items-center justify-center shrink-0">
@@ -381,29 +550,37 @@ export default function App() {
                                         className="h-6 px-2 text-[10px] mt-1 bg-blue-500/10 text-blue-300 hover:bg-blue-500 hover:text-white border-blue-500/20" 
                                         onClick={() => { setCurrentChannel(ch); setView(AppView.PLAYER); }}
                                     >
-                                        Watch
+                                        Ver
                                     </GlassButton>
                                 </div>
                             </div>
                             
-                            {/* Simulated Timeline */}
-                            <div className="col-span-9 flex gap-1 h-12">
-                                <div className="flex-1 bg-white/5 rounded-lg p-2 border border-white/5 relative overflow-hidden group/prog hover:bg-white/10 cursor-pointer">
-                                    <div className="text-xs font-medium text-gray-300 group-hover/prog:text-white truncate">Live Program</div>
-                                    <div className="text-[10px] text-gray-500">10:00 - 11:00</div>
-                                    <div className="absolute bottom-0 left-0 h-0.5 bg-blue-500 w-1/3"></div>
-                                </div>
-                                <div className="flex-1 bg-white/5 rounded-lg p-2 border border-white/5 opacity-60">
-                                    <div className="text-xs font-medium text-gray-400 truncate">Upcoming Show</div>
-                                    <div className="text-[10px] text-gray-600">11:00 - 12:00</div>
-                                </div>
-                                <div className="flex-1 bg-white/5 rounded-lg p-2 border border-white/5 opacity-40 hidden md:block">
-                                    <div className="text-xs font-medium text-gray-500 truncate">News Update</div>
-                                    <div className="text-[10px] text-gray-600">12:00 - 12:30</div>
-                                </div>
+                            {/* Program Info */}
+                            <div className="col-span-9 flex gap-1 h-14">
+                                {prog ? (
+                                    <div className="flex-1 bg-white/10 rounded-lg p-2 border border-white/5 relative overflow-hidden group/prog hover:bg-blue-600/20 cursor-pointer transition-all">
+                                        <div className="text-xs font-bold text-white truncate">{prog.title}</div>
+                                        <div className="text-[10px] text-gray-400 mt-1">{prog.start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {prog.end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                                        <div className="text-[10px] text-gray-500 truncate">{prog.description}</div>
+                                        <div className="absolute bottom-0 left-0 h-0.5 bg-blue-500" style={{ width: `${Math.min(100, Math.max(0, ((new Date().getTime() - prog.start.getTime()) / (prog.end.getTime() - prog.start.getTime())) * 100))}%` }}></div>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 bg-white/5 rounded-lg p-2 border border-white/5 flex items-center justify-center">
+                                        <span className="text-xs text-gray-600 italic">Sin información</span>
+                                    </div>
+                                )}
+                                
+                                {nextProg ? (
+                                    <div className="flex-1 bg-white/5 rounded-lg p-2 border border-white/5 opacity-60 hidden md:block">
+                                        <div className="text-xs font-medium text-gray-400 truncate">{nextProg.title}</div>
+                                        <div className="text-[10px] text-gray-600">{nextProg.start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 hidden md:block"></div>
+                                )}
                             </div>
                         </div>
-                    ))}
+                    )})}
                 </div>
             </div>
         )}
@@ -413,15 +590,15 @@ export default function App() {
                  <div className="w-full max-w-3xl space-y-6">
                     <h2 className="text-3xl font-bold mb-6 flex items-center gap-3">
                         <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-600/20"><Icons.Settings /></div> 
-                        Settings
+                        Configuración
                     </h2>
                     
                     {/* Playlist Management */}
                     <GlassCard className="p-6">
                          <div className="flex items-center justify-between mb-4">
-                             <h3 className="text-xl font-bold">Playlists</h3>
+                             <h3 className="text-xl font-bold">Listas de Reproducción</h3>
                              <GlassButton onClick={() => setShowAddPlaylist(true)} className="text-sm">
-                                <Icons.Plus /> Add New
+                                <Icons.Plus /> Añadir Nueva
                              </GlassButton>
                          </div>
                          <div className="space-y-3">
@@ -431,7 +608,7 @@ export default function App() {
                                          <div className={`w-3 h-3 rounded-full ${pl.isActive ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-gray-600'}`} />
                                          <div>
                                              <p className="font-bold text-sm">{pl.name}</p>
-                                             <p className="text-xs text-gray-500 uppercase">{pl.type} • {pl.content.length > 50 ? 'Valid Source' : 'Custom'}</p>
+                                             <p className="text-xs text-gray-500 uppercase">{pl.type} • {pl.content?.length > 50 ? 'Fuente Validada' : (pl.url ? 'Online' : 'Personal')}</p>
                                          </div>
                                      </div>
                                      <div className="flex items-center gap-2">
@@ -439,7 +616,7 @@ export default function App() {
                                             onClick={() => togglePlaylist(pl.id)}
                                             className={`px-3 py-1 rounded-lg text-xs font-medium border ${pl.isActive ? 'bg-blue-600/20 text-blue-300 border-blue-500/30' : 'bg-white/5 text-gray-400 border-white/10'}`}
                                          >
-                                            {pl.isActive ? 'Active' : 'Disabled'}
+                                            {pl.isActive ? 'Activa' : 'Desactivada'}
                                          </button>
                                          <button onClick={() => deletePlaylist(pl.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors">
                                             <Icons.Trash />
@@ -450,14 +627,42 @@ export default function App() {
                          </div>
                     </GlassCard>
 
+                     {/* EPG Management */}
+                     <GlassCard className="p-6">
+                         <div className="flex items-center justify-between mb-4">
+                             <h3 className="text-xl font-bold flex items-center gap-2"><Icons.EPG /> Fuentes EPG (Guía)</h3>
+                             <GlassButton onClick={addEpgSource} className="text-sm bg-purple-600/80 hover:bg-purple-600">
+                                <Icons.Plus /> Añadir EPG
+                             </GlassButton>
+                         </div>
+                         <p className="text-xs text-gray-400 mb-4">
+                             Puedes añadir fuentes XMLTV de <a href="https://github.com/iptv-org/epg" target="_blank" className="text-blue-400 hover:underline">iptv-org/epg</a> para ver la programación.
+                             <br/>Ejemplo: <i>https://iptv-org.github.io/epg/guides/es/mi.tv.epg.xml</i> (España)
+                         </p>
+                         <div className="space-y-3">
+                             {epgSources.length === 0 && <p className="text-sm text-gray-500 italic">No hay fuentes EPG configuradas.</p>}
+                             {epgSources.map(epg => (
+                                 <div key={epg.id} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                                      <div className="truncate flex-1 mr-4">
+                                          <p className="font-bold text-sm">{epg.name}</p>
+                                          <p className="text-xs text-gray-500 truncate">{epg.url}</p>
+                                      </div>
+                                      <button onClick={() => deleteEpg(epg.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
+                                            <Icons.Trash />
+                                      </button>
+                                 </div>
+                             ))}
+                         </div>
+                    </GlassCard>
+
                     {/* Parental Control */}
                     <GlassCard className="p-6">
-                        <h3 className="text-xl font-bold mb-4">Parental Control</h3>
+                        <h3 className="text-xl font-bold mb-4">Control Parental</h3>
                         <div className="bg-red-500/5 p-5 rounded-xl border border-red-500/10">
                             <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <p className="text-sm text-gray-300 mb-1">Protected Categories</p>
-                                    <p className="text-xs text-gray-500">Channels in these groups require a PIN.</p>
+                                    <p className="text-sm text-gray-300 mb-1">Categorías Protegidas</p>
+                                    <p className="text-xs text-gray-500">Los canales en estos grupos requieren PIN.</p>
                                 </div>
                                 <div className="text-xs font-mono bg-black/30 px-2 py-1 rounded text-gray-400">PIN: {settings.parentalPin}</div>
                             </div>
@@ -473,21 +678,21 @@ export default function App() {
                                 ))}
                                 <button 
                                     onClick={() => {
-                                        const g = prompt("Enter group name to lock:");
+                                        const g = prompt("Ingresa el nombre del grupo a bloquear:");
                                         if (g && !settings.lockedGroups.includes(g)) {
                                             setSettings({...settings, lockedGroups: [...settings.lockedGroups, g]});
                                         }
                                     }}
                                     className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 bg-white/5 hover:bg-white/10 text-gray-400 flex items-center gap-1"
                                 >
-                                    + Add Group
+                                    + Añadir Grupo
                                 </button>
                             </div>
                         </div>
                     </GlassCard>
                     
                     <div className="text-center">
-                         <GlassButton variant="ghost" onClick={() => setView(AppView.PLAYER)}>Back to Player</GlassButton>
+                         <GlassButton variant="ghost" onClick={() => setView(AppView.PLAYER)}>Volver al Reproductor</GlassButton>
                     </div>
                  </div>
              </div>
@@ -502,8 +707,8 @@ export default function App() {
             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
               <div className="scale-150"><Icons.Lock /></div>
             </div>
-            <h3 className="text-2xl font-bold mb-2 text-white">Restricted</h3>
-            <p className="text-sm text-gray-400 mb-8">Enter parental PIN to unlock.</p>
+            <h3 className="text-2xl font-bold mb-2 text-white">Restringido</h3>
+            <p className="text-sm text-gray-400 mb-8">Ingresa el PIN parental para desbloquear.</p>
             <GlassInput 
                 type="password" 
                 maxLength={4} 
@@ -514,8 +719,8 @@ export default function App() {
                 placeholder="••••"
             />
             <div className="flex gap-3">
-                <GlassButton variant="ghost" className="flex-1" onClick={() => setShowPinModal(false)}>Cancel</GlassButton>
-                <GlassButton className="flex-1 bg-red-600 hover:bg-red-500 text-white border-red-400" onClick={handlePinSubmit}>Unlock</GlassButton>
+                <GlassButton variant="ghost" className="flex-1" onClick={() => setShowPinModal(false)}>Cancelar</GlassButton>
+                <GlassButton className="flex-1 bg-red-600 hover:bg-red-500 text-white border-red-400" onClick={handlePinSubmit}>Desbloquear</GlassButton>
             </div>
           </GlassCard>
         </div>
@@ -527,16 +732,16 @@ export default function App() {
             <GlassCard className="w-full max-w-lg p-6 md:p-8">
                 <h3 className="text-2xl font-bold mb-6 flex items-center gap-3">
                     <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg"><Icons.Plus /></div>
-                    Add Playlist
+                    Añadir Lista
                 </h3>
                 
                 <div className="space-y-4">
                     <div>
-                        <label className="text-xs text-gray-400 uppercase font-bold ml-1 mb-1 block">Playlist Name</label>
+                        <label className="text-xs text-gray-400 uppercase font-bold ml-1 mb-1 block">Nombre de la Lista</label>
                         <GlassInput 
                             value={playlistName}
                             onChange={(e) => setPlaylistName(e.target.value)}
-                            placeholder="e.g. My Sports Channels"
+                            placeholder="ej. Mis Canales Deportivos"
                         />
                     </div>
 
@@ -546,19 +751,19 @@ export default function App() {
                                 onClick={() => setPlaylistSource('url')}
                                 className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${playlistSource === 'url' ? 'bg-white/20 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                             >
-                                <Icons.Globe /> URL Import
+                                <Icons.Globe /> Importar URL
                             </button>
                             <button 
                                 onClick={() => setPlaylistSource('text')}
                                 className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${playlistSource === 'text' ? 'bg-white/20 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                             >
-                                <Icons.List /> Paste Text
+                                <Icons.List /> Pegar Texto
                             </button>
                         </div>
                         
                         {playlistSource === 'url' ? (
                              <GlassInput 
-                                placeholder="https://example.com/playlist.m3u"
+                                placeholder="https://ejemplo.com/playlist.m3u"
                                 value={playlistContent}
                                 onChange={(e) => setPlaylistContent(e.target.value)}
                             />
@@ -574,9 +779,9 @@ export default function App() {
                 </div>
 
                 <div className="flex justify-end gap-3 mt-8">
-                    <GlassButton variant="ghost" onClick={() => setShowAddPlaylist(false)}>Cancel</GlassButton>
+                    <GlassButton variant="ghost" onClick={() => setShowAddPlaylist(false)}>Cancelar</GlassButton>
                     <GlassButton onClick={handleAddPlaylist} disabled={isImporting || !playlistName || !playlistContent}>
-                        {isImporting ? 'Importing...' : 'Add Playlist'}
+                        {isImporting ? 'Importando...' : 'Añadir Lista'}
                     </GlassButton>
                 </div>
             </GlassCard>

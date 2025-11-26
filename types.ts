@@ -1,3 +1,4 @@
+
 export interface Channel {
   id: string;
   name: string;
@@ -19,14 +20,23 @@ export interface StoredPlaylist {
   name: string;
   type: 'url' | 'text';
   content: string; // URL or raw text
+  url?: string; // Optional: original URL for re-fetching to save storage
   isActive: boolean;
 }
 
 export interface EPGProgram {
-  start: string;
-  end: string;
+  channelId: string; // matches tvg-id
+  start: Date;
+  end: Date;
   title: string;
   description: string;
+}
+
+export interface StoredEPG {
+  id: string;
+  name: string;
+  url: string;
+  isActive: boolean;
 }
 
 export enum AppView {

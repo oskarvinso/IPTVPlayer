@@ -1,14 +1,20 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getClient = () => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return null;
-    return new GoogleGenAI({ apiKey });
+    try {
+        // specific check to avoid ReferenceError in strict browser environments
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            return new GoogleGenAI({ apiKey: process.env.API_KEY });
+        }
+    } catch (e) {
+        console.warn("Environment variable access failed:", e);
+    }
+    return null;
 };
 
 export const getChannelInsight = async (channelName: string, groupName: string) => {
     const ai = getClient();
-    if (!ai) return "API Key not configured.";
+    if (!ai) return "AI Insights not configured (API Key missing).";
 
     try {
         const response = await ai.models.generateContent({
